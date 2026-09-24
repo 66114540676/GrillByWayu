@@ -67,12 +67,53 @@ export interface OrderModifications {
   doneness?: Doneness;
 }
 
+// ---------- token เข้าสู่ระบบ ----------
+// เก็บใน sessionStorage: ปิดแท็บแล้วต้อง login ใหม่ ห่อ try/catch เพราะบาง browser (เช่น private mode) อาจใช้ไม่ได้
+const TOKEN_KEY = 'grillbywayu.token';
+
+export const tokenStore = {
+  get(): string | null {
+    try {
+      return sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  },
+  set(token: string) {
+    try {
+      sessionStorage.setItem(TOKEN_KEY, token);
+    } catch {
+      // เก็บไม่ได้ก็ใช้ได้แค่รอบนี้ ครั้งหน้าต้อง login ใหม่
+    }
+  },
+  clear() {
+    try {
+      sessionStorage.removeItem(TOKEN_KEY);
+    } catch {
+      // ไม่มีอะไรให้ลบ
+    }
+  },
+};
+
+// backend ตอบ 401: token ไม่มี / หมดอายุ / ถูก logout ไปแล้ว หน้าเว็บจับ error นี้แล้วพาไปหน้า /login
+export class UnauthorizedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = tokenStore.get();
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new Error(`เชื่อมต่อร้านไม่ได้ ตรวจว่า backend รันอยู่ที่ ${API_URL}`);
@@ -81,13 +122,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     // NestJS ส่ง message มาเป็น string หรือ array
-    const message = body?.message;
-    throw new Error(Array.isArray(message) ? message.join(', ') : message ?? 'เกิดข้อผิดพลาด');
+    const raw = body?.message;
+    const message = Array.isArray(raw) ? raw.join(', ') : raw ?? 'เกิดข้อผิดพลาด';
+    if (res.status === 401) {
+      tokenStore.clear();
+      throw new UnauthorizedError(message);
+    }
+    throw new Error(message);
   }
   return body as T;
 }
 
 export const api = {
+  // เข้าสู่ระบบสำเร็จแล้วเก็บ token ไว้ให้ request ถัดไปแนบอัตโนมัติ
+  login: async (username: string, password: string) => {
+    const result = await request<{ token: string; username: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    tokenStore.set(result.token);
+    return result;
+  },
+  // ลบ token ฝั่งหน้าเว็บเสมอ แม้ backend จะตอบ error (เช่น token หมดอายุไปแล้ว)
+  logout: async () => {
+    try {
+      await request<void>('/auth/logout', { method: 'POST' });
+    } finally {
+      tokenStore.clear();
+    }
+  },
+  me: () => request<{ username: string }>('/auth/me'),
+
   getMenu: () => request<Menu>('/menu'),
   getSets: () => request<SignatureSet[]>('/sets'),
   getOrders: () => request<Order[]>('/orders'),

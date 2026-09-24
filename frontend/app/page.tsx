@@ -1,12 +1,16 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { OrderItemList } from './components/OrderItemList';
+import { EXPIRED_REASON } from './login/login-form';
 import {
-  api, listItems, selectionFromSet, toModifications,
+  api, listItems, selectionFromSet, toModifications, tokenStore, UnauthorizedError,
   type Doneness, type Menu, type MenuItem, type Order, type Selection, type SignatureSet,
 } from '@/lib/api';
+
+const EXPIRED_LOGIN_URL = `/login?reason=${EXPIRED_REASON}`;
 
 type Tab = 'build' | 'sets' | 'orders';
 const EMPTY: Selection = { meatIds: [], veggieIds: [], noodleIds: [] };
@@ -19,6 +23,8 @@ const TABS: { id: Tab; label: string; pattern: string }[] = [
 ];
 
 export default function Home() {
+  const router = useRouter();
+  const [username, setUsername] = useState('');
   const [tab, setTab] = useState<Tab>('build');
   const [menu, setMenu] = useState<Menu | null>(null);
   const [sets, setSets] = useState<SignatureSet[]>([]);
@@ -35,11 +41,45 @@ export default function Home() {
   const [highlightId, setHighlightId] = useState('');
   const [pendingDelete, setPendingDelete] = useState<{ type: 'one'; id: string } | { type: 'all' } | null>(null);
 
+  // 401 ระหว่างใช้งาน (เช่น restart backend แล้ว token หาย) → ไปหน้า login พร้อมข้อความหมดเวลา
+  const handleError = useCallback((e: unknown, show: (message: string) => void) => {
+    if (e instanceof UnauthorizedError) router.replace(EXPIRED_LOGIN_URL);
+    else show((e as Error).message);
+  }, [router]);
+
+  // เปิดหน้า: ไม่มี token หรือ GET /auth/me ไม่ผ่าน → ไปหน้า login ก่อน แล้วค่อยโหลดข้อมูล
   useEffect(() => {
-    Promise.all([api.getMenu(), api.getSets(), api.getOrders()])
-      .then(([m, s, o]) => { setMenu(m); setSets(s); setOrders(o); })
-      .catch((e: Error) => setLoadError(e.message));
-  }, []);
+    if (!tokenStore.get()) {
+      router.replace('/login');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await api.me();
+        if (cancelled) return;
+        setUsername(me.username);
+      } catch (e) {
+        if (!cancelled) router.replace(e instanceof UnauthorizedError ? EXPIRED_LOGIN_URL : '/login');
+        return;
+      }
+      try {
+        const [m, s, o] = await Promise.all([api.getMenu(), api.getSets(), api.getOrders()]);
+        if (cancelled) return;
+        setMenu(m); setSets(s); setOrders(o);
+      } catch (e) {
+        if (!cancelled) handleError(e, setLoadError);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [router, handleError]);
+
+  const logout = async () => {
+    await api.logout().catch(() => {
+      // ออกจากระบบฝั่งหน้าเว็บเสมอ แม้ backend จะตอบ error
+    });
+    router.replace('/login');
+  };
 
   const refreshOrders = useCallback(async () => setOrders(await api.getOrders()), []);
 
@@ -104,7 +144,7 @@ export default function Home() {
       setEditingSet(null);
       await refreshOrders();
     } catch (e) {
-      setError((e as Error).message);
+      handleError(e, setError);
     } finally {
       setSubmitting(false);
     }
@@ -117,7 +157,7 @@ export default function Home() {
       setHighlightId(order.id);
       setTab('orders');
     } catch (e) {
-      setLoadError((e as Error).message);
+      handleError(e, setLoadError);
     }
   };
 
@@ -127,7 +167,7 @@ export default function Home() {
       await refreshOrders();
       setHighlightId(order.id);
     } catch (e) {
-      setLoadError((e as Error).message);
+      handleError(e, setLoadError);
     }
   };
 
@@ -142,7 +182,7 @@ export default function Home() {
       else await api.clearOrders();
       await refreshOrders();
     } catch (e) {
-      setLoadError((e as Error).message);
+      handleError(e, setLoadError);
     }
   };
 
@@ -158,6 +198,16 @@ export default function Home() {
             <h1 className="font-display text-5xl font-semibold leading-none sm:text-6xl">GrillByWayu</h1>
             <p className="mt-2 text-lg text-paper/85">หมูกระทะ จัดชุดเองได้ทุกอย่าง</p>
           </div>
+          <div className="flex flex-col items-end gap-3">
+          {username && (
+            <div className="flex items-center gap-3 text-sm">
+              <span>สวัสดี <strong>{username}</strong></span>
+              <button onClick={logout}
+                className="rounded-full border-2 border-paper/70 px-3 py-1 font-medium hover:bg-stool-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper">
+                ออกจากระบบ
+              </button>
+            </div>
+          )}
           <nav aria-label="เมนูหลัก" className="flex gap-1 rounded-full bg-stool-dark p-1">
             {TABS.map((t) => (
               <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}
@@ -168,6 +218,7 @@ export default function Home() {
               </button>
             ))}
           </nav>
+          </div>
         </div>
       </header>
 

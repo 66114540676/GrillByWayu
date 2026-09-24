@@ -2,11 +2,12 @@ import { BadRequestException } from '@nestjs/common';
 import { MenuCatalog } from '../menu/menu.catalog';
 import { DONENESS_LEVELS, Doneness, MenuItem } from '../menu/menu.types';
 import { GrillOrder } from './grill-order';
+import type { IGrillOrderBuilder } from './grill-order.builder.interface';
 
 // [Builder: Concrete Builder]
 // ประกอบออเดอร์หมูกระทะทีละขั้น แล้วสร้าง GrillOrder ที่ถูกต้องตามกฎของร้านใน build()
 // ไม่ได้ลงทะเบียนเป็น provider เพราะ Builder เก็บสถานะของออเดอร์ที่กำลังประกอบ ต้องสร้างใหม่ทุกออเดอร์
-export class GrillOrderBuilder {
+export class GrillOrderBuilder implements IGrillOrderBuilder {
   private meats: MenuItem[] = [];
   private doneness?: Doneness;
   private veggies: MenuItem[] = [];

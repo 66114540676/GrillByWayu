@@ -36,7 +36,8 @@
 | บทบาท | คลาส | ไฟล์ |
 |---|---|---|
 | Product | `GrillOrder` | [grill-order.ts](backend/src/orders/grill-order.ts) |
-| Concrete Builder | `GrillOrderBuilder` | [grill-order.builder.ts](backend/src/orders/grill-order.builder.ts) |
+| Builder interface | `IGrillOrderBuilder` | [grill-order.builder.interface.ts](backend/src/orders/grill-order.builder.interface.ts) |
+| Concrete Builder | `GrillOrderBuilder` (implements `IGrillOrderBuilder`) | [grill-order.builder.ts](backend/src/orders/grill-order.builder.ts) |
 | Director | `OrdersService.create()` | [orders.service.ts](backend/src/orders/orders.service.ts) |
 
 `build(keepIdentityOf?)` ตรวจกฎของร้าน แล้ว reset ตัวเองรอออเดอร์ถัดไป
@@ -113,6 +114,20 @@ classDiagram
         +toJSON()
     }
 
+    class IGrillOrderBuilder {
+        <<interface>>
+        +addMeat(id) this
+        +removeMeat(id) this
+        +setDoneness(doneness) this
+        +addVeggie(id) this
+        +removeVeggie(id) this
+        +addNoodle(id) this
+        +removeNoodle(id) this
+        +setSauce(id) this
+        +reset() this
+        +build(keepIdentityOf?) GrillOrder
+    }
+
     class GrillOrderBuilder {
         -meats: MenuItem[]
         -doneness: Doneness
@@ -175,6 +190,7 @@ classDiagram
     }
 
     Prototype~T~ <|.. GrillOrder : implements
+    IGrillOrderBuilder <|.. GrillOrderBuilder : implements
     GrillOrderBuilder ..> GrillOrder : builds
     GrillOrderBuilder --> MenuCatalog : ค้นเมนู
     SignatureSetRegistry o-- GrillOrder : เก็บต้นแบบ
@@ -193,18 +209,23 @@ classDiagram
 
 Backend รันที่ `http://localhost:3001`
 
-| Method | Path | Pattern | หน้าที่ |
-|---|---|---|---|
-| GET | `/menu` | – | เมนูทั้งหมดแยกหมวด และระดับความสุก |
-| POST | `/orders` | Builder | จัดชุดเอง |
-| POST | `/orders/custom` | Builder | เส้นทางเดิม ทำงานเหมือน `POST /orders` |
-| GET | `/orders` | – | ประวัติออเดอร์ (ใหม่สุดก่อน) |
-| POST | `/orders/:id/clone` | Prototype | สั่งซ้ำ |
-| PATCH | `/orders/:id` | Prototype + Builder | แก้ไขออเดอร์ (body แบบเดียวกับการปรับเซ็ต) ได้ id เดิม และมี `updatedAt` |
-| DELETE | `/orders/:id` | – | ลบออเดอร์ 1 รายการ ได้ `204` ไม่มี body |
-| DELETE | `/orders` | – | ล้างประวัติทั้งหมด คืน `{ "deleted": จำนวนที่ลบ }` |
-| GET | `/sets` | Prototype | เซ็ตเมนูแนะนำ |
-| POST | `/sets/:setId/order` | Prototype + Builder | สั่งเซ็ต ปรับได้ (ส่ง body ว่างคือสั่งตามเดิม) |
+| Method | Path | Pattern | ต้อง login | หน้าที่ |
+|---|---|---|---|---|
+| POST | `/auth/login` | – | ไม่ต้อง | เข้าสู่ระบบ body `{ username, password }` ได้ `200` พร้อม `{ token, username }` |
+| POST | `/auth/logout` | – | 🔒 ต้อง | ออกจากระบบ ได้ `204` token เดิมใช้ไม่ได้อีก |
+| GET | `/auth/me` | – | 🔒 ต้อง | ดูผู้ใช้ที่เข้าสู่ระบบอยู่ คืน `{ username }` |
+| GET | `/menu` | – | ไม่ต้อง | เมนูทั้งหมดแยกหมวด และระดับความสุก |
+| POST | `/orders` | Builder | 🔒 ต้อง | จัดชุดเอง |
+| POST | `/orders/custom` | Builder | 🔒 ต้อง | เส้นทางเดิม ทำงานเหมือน `POST /orders` |
+| GET | `/orders` | – | 🔒 ต้อง | ประวัติออเดอร์ (ใหม่สุดก่อน) |
+| POST | `/orders/:id/clone` | Prototype | 🔒 ต้อง | สั่งซ้ำ |
+| PATCH | `/orders/:id` | Prototype + Builder | 🔒 ต้อง | แก้ไขออเดอร์ (body แบบเดียวกับการปรับเซ็ต) ได้ id เดิม และมี `updatedAt` |
+| DELETE | `/orders/:id` | – | 🔒 ต้อง | ลบออเดอร์ 1 รายการ ได้ `204` ไม่มี body |
+| DELETE | `/orders` | – | 🔒 ต้อง | ล้างประวัติทั้งหมด คืน `{ "deleted": จำนวนที่ลบ }` |
+| GET | `/sets` | Prototype | ไม่ต้อง | เซ็ตเมนูแนะนำ |
+| POST | `/sets/:setId/order` | Prototype + Builder | 🔒 ต้อง | สั่งเซ็ต ปรับได้ (ส่ง body ว่างคือสั่งตามเดิม) |
+
+endpoint ที่ต้อง login ให้แนบ header `Authorization: Bearer <token>` ถ้าไม่มีหรือ token ใช้ไม่ได้ ได้ `401` "กรุณาเข้าสู่ระบบก่อน"
 
 การลบมีผลกับประวัติออเดอร์เท่านั้น เซ็ตต้นแบบไม่ถูกลบ และลบออเดอร์ต้นฉบับแล้ว ออเดอร์ที่สั่งซ้ำจากมันยังอยู่ เพราะ `clone()` เป็นคนละ object
 
@@ -257,6 +278,24 @@ npm run dev                  # http://localhost:3000
 ```
 
 ข้อมูลออเดอร์เก็บใน In-Memory Array ปิด backend แล้วข้อมูลหาย
+
+---
+
+## การเข้าสู่ระบบ
+
+ระบบเข้าสู่ระบบแบบง่ายสำหรับเดโม มีบัญชีเดียว
+
+| ชื่อผู้ใช้ | รหัสผ่าน |
+|---|---|
+| `wayu` | `1234` |
+
+- เปลี่ยนบัญชีได้ด้วย environment variable ของ backend `AUTH_USERNAME` และ `AUTH_PASSWORD` ถ้าไม่ตั้งไว้จะใช้บัญชีด้านบน
+- ชื่อผู้ใช้และรหัสผ่านอยู่ที่ backend เท่านั้น ไม่มีในโค้ด frontend
+- เปิด http://localhost:3000 แล้วยังไม่ได้เข้าสู่ระบบ จะถูกพาไปหน้า `/login`
+- ฝั่ง API: `GET /menu` และ `GET /sets` เรียกได้โดยไม่ต้อง login ส่วนการสั่ง ดูประวัติ สั่งซ้ำ แก้ไข และลบ ต้อง login ก่อน (ดูคอลัมน์ "ต้อง login" ในตาราง API) ฝั่งหน้าเว็บต้อง login ก่อนเข้าหน้าหลัก
+- หน้าเว็บเก็บ token ใน `sessionStorage` ปิดแท็บแล้วต้องเข้าสู่ระบบใหม่
+- token เก็บใน In-Memory Map ของ backend ถ้า restart backend ทุก token จะใช้ไม่ได้ หน้าเว็บจะพาไปหน้า login พร้อมข้อความ "หมดเวลาเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่"
+- ทดสอบผ่าน Swagger UI (http://localhost:3001/docs): เรียก `POST /auth/login` แล้วนำ `token` ไปใส่ที่ปุ่ม **Authorize**
 
 ---
 
