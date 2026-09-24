@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+/* สีจากโต๊ะหมูกระทะ: กระทะอะลูมิเนียม เก้าอี้พลาสติกแดง น้ำซุป ถ่าน ผัก */
+@theme {
+  --color-steel: #e3e6e3;
+  --color-steel-deep: #c4cac5;
+  --color-paper: #f7f8f7;
+  --color-stool: #c8102e;
+  --color-stool-dark: #9e0c24;
+  --color-broth: #e8b04a;
+  --color-ember: #f06a24;
+  --color-leaf: #2f6b35;
+  --color-ink: #1c2320;
+}
+
+@theme inline {
+  --font-display: var(--font-mitr), system-ui, sans-serif;
+  --font-body: var(--font-plex), system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-steel);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
